@@ -5,6 +5,8 @@ from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import string
 
+from models import Forum, Topic, Comment
+
 nltk.download('punkt')
 nltk.download('punkt_tab')
 nltk.download('stopwords')
@@ -17,53 +19,48 @@ def fetch_forums():
 
     hardware = soup.select('#ipsLayout_mainArea > section > ol > li:nth-child(2) > ol')[0]
 
-    forums = [h4.find('a') for h4 in hardware.find_all('h4')]
+    titles = [h4.find('a') for h4 in hardware.find_all('h4')]
 
-    links = [forum.get('href') for forum in forums]
+    forums = [Forum(title.text, title.get('href')) for title in titles]
 
-    return links
+    return forums
 
 
-def fetch_topics(forum: str, pages: int = 1):
+def fetch_topics(forum: Forum, pages = 1):
     all_topics = []
 
     for page in range(1, pages + 1):
-        response = get(f'{forum}page/{page}')
+        response = get(f'{forum.url}page/{page}')
 
         soup = BeautifulSoup(response.text, 'html.parser')
 
         topics = soup.find_all('li', class_='ipsDataItem ipsDataItem_responsivePhoto')
 
-        titles = [topic.find('h4', class_='ipsDataItem_title ipsContained_container') for topic in topics]
+        titles = [topic.find('span', class_='ipsType_break ipsContained').find('a') for topic in topics]
 
-        links = [title.find('a').get('href') for title in titles]
+        usernames = [
+            topic.find('div', class_='ipsDataItem_meta ipsType_reset ipsType_light ipsType_blendLinks').find('a')
+            for topic in topics
+        ]
 
-        for link in links:
-            all_topics.append(link)
+        answers = [topic.find('li', attrs={'data-stattype': 'forums_comments'}).find('span') for topic in topics]
+
+        views = [topic.find('li', attrs={'data-stattype': 'num_views'}).find('span') for topic in topics]
+
+        for title, username, answers, views in zip(titles, usernames, answers, views):
+            all_topics.append(Topic(
+                forum,
+                title.text.strip(),
+                answers.text,
+                views.text,
+                username.text,
+                title.get('href')
+            ))
 
     return all_topics
 
-
-def fetch_comments(topic: str):
-    response = get(topic)
-
-    soup = BeautifulSoup(response.text, 'html.parser')
-
-    articles = soup.find_all('article')
-
-    paragraphs = [article.find_all('p') for article in articles]
-
-    content = []
-
-    for paragraph in paragraphs:
-        for p in paragraph:
-            content.append(p.text)
-
-    return '\n'.join(content)
-
-
-def clean_comment(comment):
-    tokens = word_tokenize(comment)
+def clean_content(content):
+    tokens = word_tokenize(content)
 
     tokens = [word.lower() for word in tokens]
 
@@ -75,18 +72,54 @@ def clean_comment(comment):
 
     return ' '.join(tokens)
 
+def fetch_comments(topic: Topic):
+    response = get(topic.url)
+
+    soup = BeautifulSoup(response.text, 'html.parser')
+
+    articles = soup.find_all('article')
+
+    usernames = [
+        article.find(
+            'h3',
+            class_='ipsType_sectionHead cAuthorPane_author ipsType_blendLinks ipsType_break'
+        ).find('a') for article in articles
+    ]
+
+    paragraphs = [article.find_all('p') for article in articles]
+
+    all_comments = []
+
+    for username, paragraph in zip(usernames, paragraphs):
+        content = []
+
+        for p in paragraph:
+            content.append(p.text)
+
+        all_comments.append(Comment(
+            topic.forum,
+            topic,
+            username.text,
+            content,
+            clean_content('\n'.join(content)),
+        ))
+
+    return all_comments
+
 
 def main():
-    comments = []
-
-    for forum in fetch_forums():
-        for topic in fetch_topics(forum):
-            comments.append(clean_comment(fetch_comments(topic)))
-
-    comments = ' '.join(comments)
-
-    print(comments)
-    print(len(comments))
+    for topic in fetch_topics(fetch_forums()[0]):
+        for comment in fetch_comments(topic):
+            print(comment.forum.name)
+            print(comment.topic.title)
+            print(comment.topic.answers)
+            print(comment.topic.views)
+            print(comment.topic.username)
+            print(comment.topic.url)
+            print(comment.username)
+            print(comment.raw_content)
+            print(comment.clean_content)
+            print()
 
 
 if __name__ == '__main__':
