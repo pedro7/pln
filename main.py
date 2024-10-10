@@ -6,6 +6,7 @@ from nltk.tokenize import word_tokenize
 import string
 
 from models import Forum, Topic, Comment
+from xlsx import create_xlsx
 
 nltk.download('punkt')
 nltk.download('punkt_tab')
@@ -53,7 +54,7 @@ def fetch_topics(forum: Forum, pages = 1):
                 title.text.strip(),
                 answers.text,
                 views.text,
-                username.text,
+                username.text if username else None,
                 title.get('href')
             ))
 
@@ -99,8 +100,8 @@ def fetch_comments(topic: Topic):
         all_comments.append(Comment(
             topic.forum,
             topic,
-            username.text,
-            content,
+            username.text if username else None,
+            '\n'.join(content),
             clean_content('\n'.join(content)),
         ))
 
@@ -108,18 +109,14 @@ def fetch_comments(topic: Topic):
 
 
 def main():
-    for topic in fetch_topics(fetch_forums()[0]):
-        for comment in fetch_comments(topic):
-            print(comment.forum.name)
-            print(comment.topic.title)
-            print(comment.topic.answers)
-            print(comment.topic.views)
-            print(comment.topic.username)
-            print(comment.topic.url)
-            print(comment.username)
-            print(comment.raw_content)
-            print(comment.clean_content)
-            print()
+    comments = []
+
+    for forum in fetch_forums():
+        for topic in fetch_topics(forum):
+            for comment in fetch_comments(topic):
+                comments.append(comment)
+
+    create_xlsx(comments)
 
 
 if __name__ == '__main__':
